@@ -1,0 +1,241 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/* ========= Enums ========= */
+enum Role {
+  STUDENT
+  TUTOR
+  ADMIN
+}
+
+enum AssignmentStatus {
+  NOT_ASSIGNED
+  WORK_ACCEPTED_WAITING_FOR_PAYMENT
+  WAITING_FOR_PAYMENT_AUTHORIZATION
+  PAYMENT_VERIFIED
+  IN_PROGRESS
+  DELIVERED
+  COMPLETED
+  DISPUTED
+  CANCELLED
+  OVERDUE
+}
+
+enum PaymentType {
+  QR
+  EMAIL
+  PHONE
+}
+
+enum ReceiptStatus {
+  SUBMITTED
+  VERIFIED
+  REJECTED
+}
+
+enum TicketStatus {
+  OPEN
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+enum OtpPurpose {
+  SIGNUP
+  RESET_PASSWORD
+  LOGIN
+}
+
+/* ========= Core Users ========= */
+model User {
+  id            String           @id @default(cuid())
+  email         String           @unique
+  username      String           @unique
+  firstName     String
+  lastName      String
+  phone         String?
+  role          Role             @default(STUDENT)
+  isActive      Boolean          @default(true)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  tutorProfile  TutorProfile?
+  bankDetail    StudentBankDetail?
+
+  // relations
+  assignments       Assignment[]     @relation("StudentAssignments")  // as Student
+  tutorAssignments  Assignment[]     @relation("TutorAssignments")    // as Tutor (ADDED)
+  sentMessages      Message[]        @relation("UserMessages")
+  tickets           SupportTicket[]  @relation("UserTickets")
+
+  @@index([role])
+}
+
+/* ========= Tutor Profiles ========= */
+model TutorProfile {
+  id            String    @id @default(cuid())
+  user          User      @relation(fields: [userId], references: [id])
+  userId        String    @unique
+  education     String?
+  verified      Boolean   @default(false)
+  online        Boolean   @default(false)
+  subjects      String[]  @default([])
+  idCardUrl     String?
+  degreeUrl     String?
+  verifiedAt    DateTime?
+  verifiedById  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+/* ========= Assignments & Messaging ========= */
+model Assignment {
+  id                 String            @id @default(cuid())
+  code               String            @unique
+  title              String
+  subject            String
+  details            String?
+  dueAt              DateTime
+  priceCents         Int               @default(0)
+  status             AssignmentStatus  @default(NOT_ASSIGNED)
+
+  acceptedAt         DateTime?
+  paymentSubmittedAt DateTime?
+  paymentVerifiedAt  DateTime?
+  startedAt          DateTime?
+  deliveredAt        DateTime?
+  completedAt        DateTime?
+  autoCompletedAt    DateTime?
+
+  reminder48Sent     Boolean           @default(false)
+  reminder24Sent     Boolean           @default(false)
+  reminder6Sent      Boolean           @default(false)
+
+  // parties
+  student            User              @relation("StudentAssignments", fields: [studentId], references: [id])
+  studentId          String
+  tutor              User?             @relation("TutorAssignments", fields: [tutorId], references: [id])  // NAMED
+  tutorId            String?
+
+  // relations
+  messages           Message[]
+  receipts           PaymentReceipt[]
+  transactions       PaymentTransaction[]
+  tickets            SupportTicket[]
+
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([status, dueAt])
+  @@index([studentId])
+  @@index([tutorId])
+}
+
+model Message {
+  id            String     @id @default(cuid())
+  assignment    Assignment @relation(fields: [assignmentId], references: [id])
+  assignmentId  String
+  sender        User       @relation("UserMessages", fields: [senderId], references: [id])
+  senderId      String
+  body          String
+  attachmentUrl String?
+  createdAt     DateTime   @default(now())
+
+  @@index([assignmentId, createdAt])
+}
+
+/* ========= Manual Payment ========= */
+model PaymentMode {
+  id           String           @id @default(cuid())
+  label        String
+  type         PaymentType
+  qrUrl        String?
+  email        String?
+  phone        String?
+  accountName  String?
+  accountHint  String?
+  active       Boolean          @default(true)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  // inverse relation (ADDED)
+  receipts     PaymentReceipt[]
+
+  @@index([type, active])
+}
+
+model PaymentReceipt {
+  id            String        @id @default(cuid())
+  assignment    Assignment    @relation(fields: [assignmentId], references: [id])
+  assignmentId  String
+  mode          PaymentMode   @relation(fields: [modeId], references: [id])
+  modeId        String
+  imageUrl      String
+  submittedById String
+  verifiedById  String?
+  status        ReceiptStatus @default(SUBMITTED)
+  notes         String?
+  verifiedAt    DateTime?
+  createdAt     DateTime      @default(now())
+
+  @@index([assignmentId])
+  @@index([status, createdAt])
+}
+
+model PaymentTransaction {
+  id            String     @id @default(cuid())
+  assignment    Assignment @relation(fields: [assignmentId], references: [id])
+  assignmentId  String
+  amountCents   Int
+  type          String     // "PAYMENT" | "REFUND"
+  createdAt     DateTime   @default(now())
+
+  @@index([assignmentId, createdAt])
+}
+
+/* ========= Refund Bank Details ========= */
+model StudentBankDetail {
+  id           String   @id @default(cuid())
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String   @unique
+  accountName  String
+  bankName     String
+  ibanOrAcct   String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+/* ========= OTP & Support ========= */
+model OtpCode {
+  id          String     @id @default(cuid())
+  userId      String?
+  destination String
+  code        String
+  purpose     OtpPurpose
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime   @default(now())
+
+  @@index([destination, purpose, expiresAt])
+}
+
+model SupportTicket {
+  id            String        @id @default(cuid())
+  reporter      User?         @relation("UserTickets", fields: [reporterId], references: [id])
+  reporterId    String?
+  assignment    Assignment?   @relation(fields: [assignmentId], references: [id])
+  assignmentId  String?
+  subject       String
+  description   String
+  status        TicketStatus  @default(OPEN)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([status, createdAt])
+}

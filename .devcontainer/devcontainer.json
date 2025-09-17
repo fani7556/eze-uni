@@ -1,0 +1,15 @@
+{
+  "name": "EZE Uni Dev",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/eze-uni",
+  "remoteUser": "node",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" }
+  },
+  "postCreateCommand": "npm i",
+  "portsAttributes": {
+    "3000": { "label": "web", "onAutoForward": "openBrowser" },
+    "5432": { "label": "postgres", "onAutoForward": "ignore" }
+  }
+}
